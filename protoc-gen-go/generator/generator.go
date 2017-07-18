@@ -259,6 +259,8 @@ type FileDescriptor struct {
 	index int // The index of this file in the list of files to generate code for
 
 	proto3 bool // whether to generate proto3 code for this file
+
+	ignoreGoPackage bool // if true, ignore go_package option.
 }
 
 // PackageName is the package name we'll use in the generated code to refer to this file.
@@ -276,6 +278,15 @@ func (d *FileDescriptor) VarName() string { return fmt.Sprintf("fileDescriptor%d
 func (d *FileDescriptor) goPackageOption() (impPath, pkg string, ok bool) {
 	pkg = d.GetOptions().GetGoPackage()
 	if pkg == "" {
+		return
+	}
+	if d.ignoreGoPackage {
+		// Ignore go_package option, which does not play well at all with Bazel, as
+		// the output file got written to locations indicated by go_package rather
+		// than the location assumed by Bazel.
+		//
+		// NOTE(yi.sun): I have already added the ignore_go_package option in
+		// rules_go, but running into the same issue in rules_protobuf again.
 		return
 	}
 	ok = true
@@ -572,6 +583,7 @@ type Generator struct {
 	init             []string                   // Lines to emit in the init function.
 	indent           string
 	writeOutput      bool
+	ignoreGoPackage  bool // If true, ignore the go_package option in the proto file.
 }
 
 // New creates a new generator and allocates the request and response protobufs.
@@ -620,6 +632,8 @@ func (g *Generator) CommandLineParameters(parameter string) {
 			g.PackageImportPath = v
 		case "plugins":
 			pluginList = v
+		case "ignore_go_package":
+			g.ignoreGoPackage = true
 		default:
 			if len(k) > 0 && k[0] == 'M' {
 				g.ImportMap[k[1:]] = v
@@ -821,6 +835,7 @@ func (g *Generator) WrapTypes() {
 			ext:                 exts,
 			exported:            make(map[Object][]symbol),
 			proto3:              fileIsProto3(f),
+			ignoreGoPackage:     g.ignoreGoPackage,
 		}
 		extractComments(fd)
 		g.allFiles = append(g.allFiles, fd)
